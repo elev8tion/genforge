@@ -114,7 +114,7 @@ function downloadFile(url, destPath, onProgress) {
             // 206 Partial Content (range accepted) or 200 OK (server ignored Range)
             if (statusCode !== 200 && statusCode !== 206) {
                 res.resume();
-                reject(new Error(`HTTP ${statusCode} from ${parsed.hostname}`));
+                reject(new Error(`HTTP ${statusCode} from ${parsed.hostname}${parsed.pathname}`));
                 return;
             }
 
@@ -327,9 +327,13 @@ async function downloadModel(modelId, mainWindow) {
     const send = (data) => mainWindow?.webContents.send('local-ai:download-progress', { id: modelId, ...data });
     send({ phase: 'downloading', progress: 0 });
 
-    await downloadFile(model.downloadUrl, destPath, (p) => {
-        send({ phase: 'downloading', progress: p });
-    });
+    try {
+        await downloadFile(model.downloadUrl, destPath, (p) => {
+            send({ phase: 'downloading', progress: p });
+        });
+    } catch (err) {
+        throw new Error(`Failed to download "${model.name}" (id: ${model.id}, url: ${model.downloadUrl}): ${err.message}`);
+    }
 
     send({ phase: 'done', progress: 1 });
     return { ok: true, path: destPath };
@@ -347,9 +351,13 @@ async function downloadAuxiliary(auxKey, mainWindow) {
     const send = (data) => mainWindow?.webContents.send('local-ai:download-progress', { id, ...data });
     send({ phase: 'downloading', progress: 0 });
 
-    await downloadFile(aux.downloadUrl, destPath, (p) => {
-        send({ phase: 'downloading', progress: p });
-    });
+    try {
+        await downloadFile(aux.downloadUrl, destPath, (p) => {
+            send({ phase: 'downloading', progress: p });
+        });
+    } catch (err) {
+        throw new Error(`Failed to download "${aux.displayName}" (id: ${aux.id}, url: ${aux.downloadUrl}): ${err.message}`);
+    }
 
     send({ phase: 'done', progress: 1 });
     return { ok: true, path: destPath };
