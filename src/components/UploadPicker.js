@@ -1,5 +1,4 @@
-import { muapi } from '../lib/muapi.js';
-import { AuthModal } from './AuthModal.js';
+import { uploadFile, hasAnyProvider } from '../lib/providers/router.js';
 import { getUploadHistory, saveUpload, removeUpload, generateThumbnail } from '../lib/uploadHistory.js';
 
 /**
@@ -17,7 +16,7 @@ export function createUploadPicker({ anchorContainer, onSelect, onClear, maxImag
     // uploadFn(file) → Promise<string url>. Defaults to Muapi-hosted upload.
     // requireApiKey() → boolean. Lets the caller suppress the AuthModal when
     // the active provider doesn't need a Muapi key (e.g. local Wan2GP).
-    const doUpload = uploadFn || ((file) => muapi.uploadFile(file));
+    const doUpload = uploadFn || ((file) => uploadFile(file));
     const needsKey = typeof requireApiKey === 'function' ? requireApiKey : () => true;
     let panelOpen = false;
     let maxImages = initialMaxImages;
@@ -323,12 +322,9 @@ export function createUploadPicker({ anchorContainer, onSelect, onClear, maxImag
         const files = Array.from(e.target.files);
         if (!files.length) return;
 
-        if (needsKey()) {
-            const apiKey = localStorage.getItem('muapi_key');
-            if (!apiKey) {
-                AuthModal(() => fileInput.click());
-                return;
-            }
+        if (needsKey() && !hasAnyProvider()) {
+            window.dispatchEvent(new CustomEvent('navigate', { detail: { page: 'settings' } }));
+            return;
         }
 
         showSpinner();

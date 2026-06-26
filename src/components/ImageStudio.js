@@ -1,4 +1,4 @@
-import { muapi } from '../lib/muapi.js';
+import * as router from '../lib/providers/router.js';
 import {
     t2iModels, getAspectRatiosForModel, getResolutionsForModel, getQualityFieldForModel,
     i2iModels, getAspectRatiosForI2IModel, getResolutionsForI2IModel, getQualityFieldForI2IModel,
@@ -7,7 +7,6 @@ import {
 import { localAI, isLocalAIAvailable } from '../lib/localInferenceClient.js';
 import { LOCAL_MODEL_CATALOG, getLocalModelById } from '../lib/localModels.js';
 import { ENHANCE_TAGS, QUICK_PROMPTS } from '../lib/promptUtils.js';
-import { AuthModal } from './AuthModal.js';
 import { t } from '../lib/i18n.js';
 import { createUploadPicker } from './UploadPicker.js';
 import { savePendingJob, removePendingJob, getPendingJobs } from '../lib/pendingJobs.js';
@@ -113,7 +112,7 @@ export function ImageStudio() {
     // --- Image Upload Picker (Image-to-Image) ---
     const picker = createUploadPicker({
         anchorContainer: container,
-        uploadFn: (file) => useLocalModel ? URL.createObjectURL(file) : muapi.uploadFile(file),
+        uploadFn: (file) => useLocalModel ? URL.createObjectURL(file) : router.uploadFile(file),
         requireApiKey: () => !useLocalModel,
         onSelect: ({ url, urls }) => {
             uploadedImageUrls = urls || [url];
@@ -1004,7 +1003,7 @@ export function ImageStudio() {
         generationHistory.unshift(entry);
 
         // Save to localStorage
-        localStorage.setItem('muapi_history', JSON.stringify(generationHistory.slice(0, 50)));
+        localStorage.setItem('genforge_history', JSON.stringify(generationHistory.slice(0, 50)));
 
         // Show sidebar
         historySidebar.classList.remove('translate-x-full', 'opacity-0');
@@ -1030,7 +1029,7 @@ export function ImageStudio() {
 
             thumb.onclick = (e) => {
                 if (e.target.closest('.hist-download')) {
-                    downloadImage(entry.url, `muapi-${entry.id || idx}.jpg`);
+                    downloadImage(entry.url, `genforge-${entry.id || idx}.jpg`);
                     return;
                 }
                 showImageInCanvas(entry.url);
@@ -1068,7 +1067,7 @@ export function ImageStudio() {
 
     // --- Load history from localStorage ---
     try {
-        const saved = JSON.parse(localStorage.getItem('muapi_history') || '[]');
+        const saved = JSON.parse(localStorage.getItem('genforge_history') || '[]');
         if (saved.length > 0) {
             saved.forEach(e => generationHistory.push(e));
             historySidebar.classList.remove('translate-x-full', 'opacity-0');
@@ -1082,8 +1081,7 @@ export function ImageStudio() {
         const pending = getPendingJobs('image');
         if (!pending.length) return;
 
-        const apiKey = localStorage.getItem('muapi_key');
-        if (!apiKey) return; // can't poll without key; jobs remain for next time
+        if (!router.hasAnyProvider()) return;
 
         const banner = document.createElement('div');
         banner.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-[200] bg-[#111] border border-white/10 text-white text-sm px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3';
@@ -1095,11 +1093,8 @@ export function ImageStudio() {
             const elapsedAttempts = Math.floor((Date.now() - job.submittedAt) / job.interval);
             const attemptsLeft = Math.max(1, job.maxAttempts - elapsedAttempts);
             try {
-                const result = await muapi.pollForResult(job.requestId, apiKey, attemptsLeft, job.interval);
-                const url = result.outputs?.[0] || result.url || result.output?.url;
-                if (url) {
-                    addToHistory({ id: job.requestId, url, ...job.historyMeta, timestamp: new Date().toISOString() });
-                }
+                // Cross-session resume not supported in GenForge multi-provider model
+                console.info('[ImageStudio] Discarding stale pending job:', job.requestId);
             } catch (e) {
                 console.warn('[ImageStudio] Pending job failed on resume:', job.requestId, e.message);
             } finally {
@@ -1116,7 +1111,7 @@ export function ImageStudio() {
         const current = resultImg.src;
         if (current) {
             const entry = generationHistory.find(e => e.url === current);
-            downloadImage(current, `muapi-${entry?.id || 'image'}.jpg`);
+            downloadImage(current, `genforge-${entry?.id || 'image'}.jpg`);
         }
     };
 
@@ -1237,9 +1232,8 @@ export function ImageStudio() {
         }
 
         // ── Remote API path ───────────────────────────────────────────────────
-        const apiKey = localStorage.getItem('muapi_key');
-        if (!apiKey) {
-            AuthModal(() => generateBtn.click());
+        if (!router.hasAnyProvider()) {
+            window.dispatchEvent(new CustomEvent('navigate', { detail: { page: 'settings' } }));
             return;
         }
 
@@ -1268,7 +1262,7 @@ export function ImageStudio() {
                 if (prompt) genParams.prompt = prompt;
                 const qualityField = getCurrentQualityField(selectedModel);
                 if (qualityField && qualityLabel) genParams[qualityField] = qualityLabel;
-                res = await muapi.generateI2I(genParams);
+                res = await router.generateI2I(genParams);
             } else {
                 const genParams = {
                     model: selectedModel,
@@ -1281,7 +1275,7 @@ export function ImageStudio() {
                 };
                 const qualityField = getCurrentQualityField(selectedModel);
                 if (qualityField && qualityLabel) genParams[qualityField] = qualityLabel;
-                res = await muapi.generateImage(genParams);
+                res = await router.generateImage(genParams);
             }
 
             console.log('[ImageStudio] Full response:', res);

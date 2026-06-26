@@ -1,6 +1,6 @@
 {
-  "name": "open-generative-ai",
-  "description": "Open-source alternative to HF AI — AI image, video, cinema and lip sync studio",
+  "name": "genforge",
+  "description": "Multi-provider AI generation studio",
   "homepage": "https://github.com/Anil-matcha/Open-Generative-AI",
   "private": true,
   "version": "2.0.0",
@@ -36,9 +36,9 @@
     "electron:build:all": "vite build && electron-builder --mac --win --linux"
   },
   "build": {
-    "appId": "ai.generative.open",
-    "productName": "Open Generative AI",
-    "copyright": "Copyright © 2025",
+    "appId": "app.genforge.studio",
+    "productName": "GenForge",
+    "copyright": "Copyright © 2026",
     "directories": {
       "output": "release"
     },

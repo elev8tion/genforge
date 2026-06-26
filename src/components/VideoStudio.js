@@ -1,6 +1,5 @@
-import { muapi } from '../lib/muapi.js';
+import * as router from '../lib/providers/router.js';
 import { t2vModels, getAspectRatiosForVideoModel, getDurationsForModel, getResolutionsForVideoModel, i2vModels, getAspectRatiosForI2VModel, getDurationsForI2VModel, getResolutionsForI2VModel, v2vModels, getModesForModel } from '../lib/models.js';
-import { AuthModal } from './AuthModal.js';
 import { t } from '../lib/i18n.js';
 import { createUploadPicker } from './UploadPicker.js';
 import { savePendingJob, removePendingJob, getPendingJobs } from '../lib/pendingJobs.js';
@@ -170,7 +169,7 @@ export function VideoStudio() {
         },
         // Route the upload through the configured Wan2GP server when the active
         // model is local; otherwise fall back to the Muapi-hosted upload.
-        uploadFn: (file) => isWan2gpModelId(selectedModel) ? localAI.uploadFileToWan2gp(file) : muapi.uploadFile(file),
+        uploadFn: (file) => isWan2gpModelId(selectedModel) ? localAI.uploadFileToWan2gp(file) : router.uploadFile(file),
         requireApiKey: () => !isWan2gpModelId(selectedModel),
     });
     topRow.appendChild(picker.trigger);
@@ -184,7 +183,7 @@ export function VideoStudio() {
         anchorContainer: container,
         onSelect: ({ url }) => { uploadedEndImageUrl = url; },
         onClear: () => { uploadedEndImageUrl = null; },
-        uploadFn: (file) => isWan2gpModelId(selectedModel) ? localAI.uploadFileToWan2gp(file) : muapi.uploadFile(file),
+        uploadFn: (file) => isWan2gpModelId(selectedModel) ? localAI.uploadFileToWan2gp(file) : router.uploadFile(file),
         requireApiKey: () => !isWan2gpModelId(selectedModel),
     });
     endPicker.trigger.title = 'End frame (optional)';
@@ -298,15 +297,14 @@ export function VideoStudio() {
         const file = e.target.files[0];
         if (!file) return;
 
-        const apiKey = localStorage.getItem('muapi_key');
-        if (!apiKey) {
-            AuthModal(() => videoFileInput.click());
+        if (!router.hasAnyProvider()) {
+            window.dispatchEvent(new CustomEvent('navigate', { detail: { page: 'settings' } }));
             return;
         }
 
         showVideoSpinner();
         try {
-            const url = await muapi.uploadFile(file);
+            const url = await router.uploadFile(file);
             uploadedVideoUrl = url;
             showVideoReady(file.name);
 
@@ -995,8 +993,7 @@ export function VideoStudio() {
         const pending = getPendingJobs('video');
         if (!pending.length) return;
 
-        const apiKey = localStorage.getItem('muapi_key');
-        if (!apiKey) return; // can't poll without key; jobs remain for next time
+        if (!router.hasAnyProvider()) return;
 
         const banner = document.createElement('div');
         banner.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-[200] bg-[#111] border border-white/10 text-white text-sm px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3';
@@ -1008,11 +1005,8 @@ export function VideoStudio() {
             const elapsedAttempts = Math.floor((Date.now() - job.submittedAt) / job.interval);
             const attemptsLeft = Math.max(1, job.maxAttempts - elapsedAttempts);
             try {
-                const result = await muapi.pollForResult(job.requestId, apiKey, attemptsLeft, job.interval);
-                const url = result.outputs?.[0] || result.url || result.output?.url;
-                if (url) {
-                    addToHistory({ id: job.requestId, url, ...job.historyMeta, timestamp: new Date().toISOString() });
-                }
+                // Cross-session resume not supported in GenForge multi-provider model
+                console.info('[VideoStudio] Discarding stale pending job:', job.requestId);
             } catch (e) {
                 console.warn('[VideoStudio] Pending job failed on resume:', job.requestId, e.message);
             } finally {
@@ -1117,13 +1111,9 @@ export function VideoStudio() {
 
         const isLocal = isWan2gpModelId(selectedModel);
 
-        // Local Wan2GP generations don't go through Muapi — skip the auth gate.
-        if (!isLocal) {
-            const apiKey = localStorage.getItem('muapi_key');
-            if (!apiKey) {
-                AuthModal(() => generateBtn.click());
-                return;
-            }
+        if (!isLocal && !router.hasAnyProvider()) {
+            window.dispatchEvent(new CustomEvent('navigate', { detail: { page: 'settings' } }));
+            return;
         }
 
         hero.classList.add('opacity-0', 'scale-95', '-translate-y-10', 'pointer-events-none');
@@ -1180,7 +1170,7 @@ export function VideoStudio() {
                 const v2vParams = { model: selectedModel, video_url: uploadedVideoUrl, onRequestId };
                 if (model?.imageField && uploadedImageUrl) v2vParams.image_url = uploadedImageUrl;
                 if (model?.hasPrompt && prompt) v2vParams.prompt = prompt;
-                const res = await muapi.processV2V(v2vParams);
+                const res = await router.processV2V(v2vParams);
                 console.log('[VideoStudio] V2V response:', res);
                 if (res && res.url) {
                     if (capturedRequestId) removePendingJob(capturedRequestId);
@@ -1216,7 +1206,7 @@ export function VideoStudio() {
                 if (selectedMode) i2vParams.mode = selectedMode;
                 if (selectedEffectName) i2vParams.name = selectedEffectName;
 
-                const res = await muapi.generateI2V(i2vParams);
+                const res = await router.generateI2V(i2vParams);
                 console.log('[VideoStudio] I2V response:', res);
 
                 if (res && res.url) {
@@ -1259,7 +1249,7 @@ export function VideoStudio() {
             if (selectedQuality) params.quality = selectedQuality;
             if (selectedMode) params.mode = selectedMode;
 
-            const res = await muapi.generateVideo(params);
+            const res = await router.generateVideo(params);
 
             console.log('[VideoStudio] Full response:', res);
 
